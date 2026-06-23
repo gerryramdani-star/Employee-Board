@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Production Board - Lagikreatif</title>
+    
+    <!-- Import Google Fonts: Plus Jakarta Sans -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <!-- Import Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Import Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Import Map -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react/jsx-runtime": "https://esm.sh/react@18/jsx-runtime"
+      }
+    }
+    </script>
+</head>
+<body class="bg-slate-50 text-slate-900 transition-colors duration-300">
+    
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect } from 'https://esm.sh/react@18';
+        import { createRoot } from 'https://esm.sh/react-dom@18/client';
+        import { Sun, Moon, Calendar, RefreshCw, Award, Activity, CheckCircle2 } from 'https://esm.sh/lucide-react@0.292.0';
+
+        const Card = ({ children, className = "" }) => (
+            <div className={`bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-5 ${className}`}>
+                {children}
+            </div>
+        );
+
+        const EmployeeKPIFull = ({ targets, logs }) => {
+          if (!targets || targets.length === 0) {
+            return (
+              <Card className="flex flex-col items-center justify-center p-16 mt-8">
+                <Activity size={64} className="text-slate-300 dark:text-slate-600 mb-4 animate-pulse" />
+                <p className="text-slate-500 dark:text-slate-400 font-bold text-lg">Menyiapkan Data Produksi...</p>
+                <p className="text-sm text-slate-400 dark:text-slate-500 mt-2">Menyinkronkan log harian dengan master target.</p>
+              </Card>
+            );
+          }
+
+          const today = new Date();
+          const currentMonthStr = `${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`; 
+
+          // FUNGSI NORMALISASI TANGGAL TANGGUH
+          const normalizeDate = (dStr) => {
+              if(!dStr) return '';
+              const cleanStr = dStr.split(' ')[0].trim(); 
+              const parts = cleanStr.split(/[\/\-]/); 
+              if(parts.length === 3) {
+                  let p1 = parseInt(parts[0], 10);
+                  let p2 = parseInt(parts[1], 10);
+                  let p3 = parts[2];
+                  if (p3.length === 2) p3 = '20' + p3;
+                  
+                  const ty = today.getFullYear();
+                  const tm = today.getMonth() + 1;
+                  const td = today.getDate();
+
+                  if (parts[0].length === 4) return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`;
+                  
+                  if (parseInt(p3, 10) === ty) {
+                      if ((p1 === td && p2 === tm) || (p1 === tm && p2 === td)) {
+                          return `${String(td).padStart(2, '0')}/${String(tm).padStart(2, '0')}/${ty}`;
+                      }
+                  }
+                  return `${String(p1).padStart(2, '0')}/${String(p2).padStart(2, '0')}/${p3}`;
+              }
+              return dStr;
+          };
+
+          const todayStrNormalized = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+
+          const processedData = targets.map(t => {
+            const tName = (t.nama || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            
+            const empLogs = (logs || []).filter(l => {
+                const lName = (l.nama || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (!lName || !tName) return false;
+                return tName === lName || tName.includes(lName) || lName.includes(tName);
+            });
+            
+            let aktualHariIni = 0;
+            let aktualBulanIni = 0;
+            
+            empLogs.forEach(log => {
+                const logDate = normalizeDate(log.tanggal || '');
+                const isToday = logDate === todayStrNormalized;
+                const isThisMonth = logDate.substring(3) === currentMonthStr; 
+                
+                const isDesigner = (t.divisi || '').toLowerCase().includes('designer');
+                let points = 0;
+                
+                const qtyStd = Number(log.qty_standar) || 0;
+                const qtyCar = Number(log.qty_carousel) || 0;
+
+                if (isDesigner) {
+                    points = (qtyStd * 1) + (qtyCar * 3);
+                } else {
+                    points = qtyStd + qtyCar; 
+                }
+                
+                if (isToday) aktualHariIni += points;
+                if (isThisMonth) aktualBulanIni += points;
+            });
+            
+            const targetHari = Number(t.target_hari) || 1;
+            const baselineKpi = Number(t.baseline_kpi) || 1;
+            const targetBulan = Number(t.target_bulan) || 1;
+            
+            const workloadPct = Math.min(100, (targetHari / baselineKpi) * 100);
+            const dailyProgressPct = Math.min(100, (aktualHariIni / targetHari) * 100);
+            
+            let status = 'Optimal';
+            let statusColor = 'text-emerald-500 bg-emerald-100 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800';
+            if (aktualHariIni === 0) {
+                status = 'Belum Ada Progress';
+                statusColor = 'text-slate-500 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700';
+            } else if (dailyProgressPct < 50) {
+                status = 'Risiko Bottleneck';
+                statusColor = 'text-rose-500 bg-rose-100 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800';
+            } else if (dailyProgressPct < 100) {
+                status = 'On Track';
+                statusColor = 'text-yellow-600 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800';
+            } else {
+                status = 'Target Achieved 🎉';
+                statusColor = 'text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30 font-bold border border-emerald-300 dark:border-emerald-700';
+            }
+
+            return {
+                ...t, aktualHariIni, aktualBulanIni, workloadPct, dailyProgressPct,
+                status, statusColor, targetHari, baselineKpi, targetBulan
+            };
+          });
+
+          processedData.sort((a, b) => a.dailyProgressPct - b.dailyProgressPct);
+
+          const totalEmp = processedData.length;
+          const statusCounts = {
+              optimal: processedData.filter(e => e.dailyProgressPct >= 100).length,
+              onTrack: processedData.filter(e => e.dailyProgressPct >= 50 && e.dailyProgressPct < 100).length,
+              bottleneck: processedData.filter(e => e.dailyProgressPct > 0 && e.dailyProgressPct < 50).length,
+              noProgress: processedData.filter(e => e.aktualHariIni === 0).length,
+          };
+          const goodCount = statusCounts.optimal + statusCounts.onTrack;
+
+          const divisionStats = {};
+          processedData.forEach(emp => {
+              const div = emp.divisi || 'Lainnya';
+              if (!divisionStats[div]) {
+                  divisionStats[div] = { totalWorkload: 0, count: 0 };
+              }
+              divisionStats[div].totalWorkload += emp.workloadPct;
+              divisionStats[div].count += 1;
+          });
+
+          const divisionAverages = Object.keys(divisionStats).map(div => ({
+              divisi: div,
+              avgWorkload: divisionStats[div].totalWorkload / divisionStats[div].count
+          })).sort((a, b) => b.avgWorkload - a.avgWorkload);
+
+          return (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                <Card className="bg-gradient-to-br from-[#0A1F44] to-[#1a3668] text-white border-none shadow-md flex flex-col justify-between relative overflow-hidden">
+                   <div className="absolute -bottom-8 -right-8 opacity-10"><Award size={160} /></div>
+                   <div className="relative z-10">
+                       <p className="text-sm text-slate-300 mb-1">Total Tim Aktif Hari Ini</p>
+                       <h3 className="text-4xl font-black text-[#F5A623]">{totalEmp} <span className="text-base font-medium text-white/70">Orang</span></h3>
+                   </div>
+                   <div className="mt-6 pt-4 border-t border-white/20 space-y-3 relative z-10">
+                       <p className="text-xs text-slate-300 font-bold uppercase tracking-wider mb-2">Daily Status Radar</p>
+                       <div className="flex justify-between items-center text-sm bg-white/5 px-3 py-1.5 rounded-lg">
+                           <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"></span> On Track / Achieved</span>
+                           <span className="font-bold text-emerald-400 text-lg">{goodCount}</span>
+                       </div>
+                       <div className="flex justify-between items-center text-sm px-3 py-1">
+                           <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.8)]"></span> Risiko Bottleneck</span>
+                           <span className="font-bold text-yellow-400">{statusCounts.bottleneck}</span>
+                       </div>
+                       <div className="flex justify-between items-center text-sm px-3 py-1">
+                           <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.8)]"></span> Belum Ada Progress</span>
+                           <span className="font-bold text-rose-400">{statusCounts.noProgress}</span>
+                       </div>
+                   </div>
+                </Card>
+
+                <Card className="lg:col-span-2 shadow-md border-t-4 border-t-[#F5A623]">
+                    <div className="mb-6 flex justify-between items-start">
+                        <div>
+                            <h2 className="text-xl font-bold text-[#0A1F44] dark:text-white">Workload Radar per Divisi</h2>
+                            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Distribusi utilitas beban kerja harian rata-rata per divisi.</p>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mt-2">
+                        {divisionAverages.length === 0 ? (
+                            <p className="text-sm text-slate-500 italic">Belum ada data divisi...</p>
+                        ) : divisionAverages.map((div, idx) => (
+                            <div key={idx} className="space-y-2 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                                <div className="flex justify-between text-sm items-end">
+                                    <span className="font-bold text-slate-700 dark:text-slate-300">{div.divisi}</span>
+                                    <span className={`font-black text-lg ${div.avgWorkload >= 100 ? 'text-rose-500' : div.avgWorkload < 50 ? 'text-[#38bdf8] dark:text-[#38bdf8]' : 'text-emerald-500'}`}>
+                                        {div.avgWorkload.toFixed(1)}%
+                                    </span>
+                                </div>
+                                <div className="h-2.5 w-full bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
+                                    <div
+                                        className={`h-full rounded-full transition-all duration-1000 ${div.avgWorkload >= 100 ? 'bg-rose-500' : div.avgWorkload < 50 ? 'bg-[#38bdf8]' : 'bg-emerald-500'}`}
+                                        style={{ width: `${Math.min(100, div.avgWorkload)}%` }}
+                                    ></div>
+                                </div>
+                                <p className="text-[10px] text-slate-400 text-right font-semibold uppercase tracking-wider">
+                                    {div.avgWorkload >= 100 ? '🚨 Overload' : div.avgWorkload < 50 ? '❄️ Under-utilized' : '✅ Kapasitas Optimal'}
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                </Card>
+              </div>
+
+              <Card className="shadow-lg">
+                <div className="flex justify-between items-center mb-6 border-b border-slate-100 dark:border-slate-700 pb-4">
+                  <div>
+                    <h2 className="text-2xl font-black text-[#0A1F44] dark:text-white flex items-center gap-2">
+                       <CheckCircle2 className="text-emerald-500" /> Daily Progress Roster
+                    </h2>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Pantauan aktual target hari ini. Silakan submit Google Form jika tugas Anda sudah selesai.</p>
+                  </div>
+                  <div className="bg-[#0A1F44]/5 dark:bg-slate-800 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600">
+                     <span className="text-xs font-bold text-slate-500 block text-right uppercase tracking-wider mb-0.5">Tanggal Laporan</span>
+                     <span className="font-black text-[#F5A623] text-lg">{todayStrNormalized}</span>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                     <thead className="text-xs text-slate-500 uppercase bg-slate-100 dark:bg-slate-800 dark:text-slate-400">
+                       <tr>
+                         <th className="px-5 py-4 rounded-tl-lg">Nama & Divisi</th>
+                         <th className="px-5 py-4">Klien Dipegang</th>
+                         <th className="px-5 py-4 min-w-[150px]">Beban Kerja (Utilitas)</th>
+                         <th className="px-5 py-4 min-w-[180px]">Progress Hari Ini</th>
+                         <th className="px-5 py-4 min-w-[120px]">Bulan Ini</th>
+                         <th className="px-5 py-4 rounded-tr-lg text-center">Status Roster</th>
+                       </tr>
+                     </thead>
+                     <tbody>
+                       {processedData.length === 0 ? (
+                          <tr><td colSpan="6" className="text-center py-12 text-slate-500 italic">Belum ada data target karyawan.</td></tr>
+                       ) : processedData.map((emp, i) => (
+                         <tr key={i} className="border-b dark:border-slate-700/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                           <td className="px-5 py-4">
+                              <p className="font-bold text-[#0A1F44] dark:text-white text-base">{emp.nama}</p>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mt-0.5 bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded inline-block">{emp.divisi}</p>
+                           </td>
+                           <td className="px-5 py-4 text-xs text-slate-600 dark:text-slate-300">
+                              <div className="max-w-[200px] leading-relaxed line-clamp-2 hover:line-clamp-none cursor-pointer" title={emp.klien_dipegang}>{emp.klien_dipegang}</div>
+                           </td>
+                           <td className="px-5 py-4">
+                              <div className="flex justify-between text-xs mb-1.5">
+                                <span className="text-slate-500 font-medium">Beban: <strong className="text-slate-700 dark:text-slate-300">{emp.targetHari}</strong> / {emp.baselineKpi}</span>
+                                <span className={`font-bold ${emp.workloadPct >= 100 ? 'text-rose-500' : 'text-slate-700 dark:text-slate-300'}`}>{emp.workloadPct.toFixed(0)}%</span>
+                              </div>
+                              <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full ${emp.workloadPct >= 100 ? 'bg-rose-500' : 'bg-[#38bdf8]'}`} style={{ width: `${Math.min(100, emp.workloadPct)}%` }}></div>
+                              </div>
+                           </td>
+                           <td className="px-5 py-4">
+                              <div className="flex justify-between text-xs mb-1.5 items-end">
+                                <span className="font-medium text-slate-500">Selesai: <strong className="text-[#0A1F44] dark:text-white text-lg">{emp.aktualHariIni}</strong><span className="text-slate-400">/{emp.targetHari}</span></span>
+                                <span className="font-black text-[#F5A623]">{emp.dailyProgressPct.toFixed(0)}%</span>
+                              </div>
+                              <div className="h-2.5 w-full bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
+                                <div className={`h-full rounded-full transition-all duration-1000 ${emp.dailyProgressPct >= 100 ? 'bg-emerald-500' : emp.dailyProgressPct >= 50 ? 'bg-yellow-400' : 'bg-rose-500'}`} style={{ width: `${emp.dailyProgressPct}%` }}></div>
+                              </div>
+                           </td>
+                           <td className="px-5 py-4">
+                              <div className="text-xs bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 w-max">
+                                <span className="font-bold text-[#0A1F44] dark:text-white text-base">{emp.aktualBulanIni}</span>
+                                <span className="text-slate-500 font-medium"> / {emp.targetBulan}</span>
+                              </div>
+                           </td>
+                           <td className="px-5 py-4 text-center">
+                              <span className={`px-3 py-1.5 text-[10px] uppercase font-bold tracking-widest rounded-md whitespace-nowrap shadow-sm ${emp.statusColor}`}>
+                                {emp.status}
+                              </span>
+                           </td>
+                         </tr>
+                       ))}
+                     </tbody>
+                  </table>
+                </div>
+              </Card>
+            </div>
+          );
+        };
+
+        function App() {
+          const [isDarkMode, setIsDarkMode] = useState(false);
+          const [isLoading, setIsLoading] = useState(true);
+          const [fetchError, setFetchError] = useState(null); 
+          
+          const [employeeTargets, setEmployeeTargets] = useState([]);
+          const [employeeLogs, setEmployeeLogs] = useState([]);
+
+          const fetchSheetData = async () => {
+            setIsLoading(true);
+            setFetchError(null);
+
+            const fetchSafely = async (url) => {
+                try {
+                    // Jalur 1: Coba koneksi langsung (Sangat cepat jika didukung browser)
+                    const res = await fetch(url);
+                    if (res.ok) {
+                        const text = await res.text();
+                        if (!text.trim().toLowerCase().startsWith('<!doctype') && !text.trim().toLowerCase().startsWith('<html')) {
+                            return { data: text, error: null };
+                        }
+                    }
+                } catch (e1) {
+                    console.log(`Jalur utama gagal, mencoba proxy alternatif...`);
+                }
+
+                try {
+                    // Jalur 2: Fallback ke Proxy jika jalur utama diblokir CORS
+                    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+                    const res = await fetch(proxyUrl);
+                    if (res.ok) {
+                        const text = await res.text();
+                        if (!text.trim().toLowerCase().startsWith('<!doctype') && !text.trim().toLowerCase().startsWith('<html')) {
+                            return { data: text, error: null };
+                        }
+                    }
+                } catch (e) {
+                    console.log(`Fetch error via proxy.`);
+                }
+                return { data: "", error: `Gagal memuat data. Cek koneksi atau tunggu beberapa saat.` };
+            };
+
+            const baseUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vREER9VzmeYUpJP9H4UH866bCCE5rtjyCFI1_P6jwVWF9XmY359fFxeeZdRgtDkFBuKsHd_s3Fvm8x4/pub';
+            
+            // HANYA MENGAMBIL TAB 11 DAN 12 UNTUK KEAMANAN DAN KECEPATAN
+            const urls = [
+                `${baseUrl}?gid=379494330&output=csv`, // Tab 11: Master KPI Target
+                `${baseUrl}?gid=1573069359&output=csv`  // Tab 12: Log Harian
+            ];
+
+            try {
+                const results = await Promise.all([
+                    fetchSafely(urls[0]),
+                    fetchSafely(urls[1])
+                ]);
+
+                if (results[0].error && results[1].error) throw new Error("Koneksi ke database terputus.");
+
+                const parseCSV = (csv) => {
+                  if (!csv) return [];
+                  const lines = csv.split(/\r?\n/).filter(line => line.trim());
+                  if (lines.length < 2) return [];
+                  const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/["']/g, ''));
+                  return lines.slice(1).map(line => {
+                      const values = []; let inQuotes = false; let currentValue = '';
+                      for (let i = 0; i < line.length; i++) {
+                          const char = line[i];
+                          if (char === '"') inQuotes = !inQuotes;
+                          else if (char === ',' && !inQuotes) { values.push(currentValue); currentValue = ''; }
+                          else currentValue += char;
+                      }
+                      values.push(currentValue);
+                      const row = {};
+                      headers.forEach((header, index) => { row[header] = values[index] ? values[index].replace(/^"|"$/g, '').trim() : ''; });
+                      return row;
+                  });
+                };
+
+                if (results[0].data) setEmployeeTargets(parseCSV(results[0].data));
+                if (results[1].data) setEmployeeLogs(parseCSV(results[1].data));
+
+            } catch (error) {
+                setFetchError(error.message);
+            } finally {
+                setIsLoading(false);
+            }
+          };
+
+          useEffect(() => { fetchSheetData(); }, []);
+
+          useEffect(() => {
+            if (isDarkMode) document.documentElement.classList.add('dark');
+            else document.documentElement.classList.remove('dark');
+          }, [isDarkMode]);
+
+          const todayIndo = new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+          return (
+            <div className={`min-h-screen font-sans flex flex-col ${isDarkMode ? 'dark bg-slate-900' : 'bg-slate-50'}`}>
+                
+                {/* HEADER SEDERHANA TANPA SIDEBAR */}
+                <header className="h-16 bg-[#0A1F44] flex items-center justify-between px-6 shadow-md sticky top-0 z-30">
+                  <div className="flex items-center gap-4">
+                     <h1 className="flex items-center">
+                         <img 
+                             src="https://raw.githubusercontent.com/gerryramdani-star/Dashboard-Revenue/refs/heads/main/asset/logo-LK-white.png" 
+                             alt="Logo Dashboard" 
+                             className="h-8 w-auto" 
+                         />
+                     </h1>
+                  </div>
+                  
+                  <div className="flex items-center gap-3">
+                    <div className="hidden md:flex items-center gap-1.5 text-xs font-semibold bg-white/10 text-white px-3 py-1.5 rounded-full border border-white/20">
+                        <Calendar size={14} className="text-[#F5A623]" />
+                        <span>{todayIndo}</span>
+                    </div>
+
+                    <button 
+                      onClick={fetchSheetData} 
+                      disabled={isLoading}
+                      className={`flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-lg transition-all ${
+                        isLoading ? 'bg-white/10 text-white/50 cursor-not-allowed' : 'bg-[#F5A623] text-[#0A1F44] hover:bg-amber-400'
+                      }`}
+                    >
+                      <RefreshCw size={16} className={isLoading ? "animate-spin" : ""} /> 
+                      <span className="hidden sm:inline">{isLoading ? 'Syncing...' : 'Sync Data'}</span>
+                    </button>
+                    
+                    <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 text-white/70 hover:bg-white/10 hover:text-white rounded-full transition-colors">
+                      {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+                    </button>
+                  </div>
+                </header>
+
+                {/* MAIN CONTENT FULL WIDTH */}
+                <main className="flex-1 p-4 md:p-8 w-full mx-auto">
+                    {fetchError && (
+                        <div className="bg-rose-100 dark:bg-rose-900/30 border border-rose-400 text-rose-700 dark:text-rose-400 px-4 py-3 rounded-xl mb-6 flex items-center gap-3">
+                            <Activity size={20} /> {fetchError}
+                        </div>
+                    )}
+
+                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-7xl mx-auto">
+                        <EmployeeKPIFull targets={employeeTargets} logs={employeeLogs} />
+                    </div>
+                </main>
+
+                <footer className="text-center py-6 text-sm text-slate-500 dark:text-slate-400 font-medium">
+                    &copy; 2026 Lagikreatif Internal System
+                </footer>
+            </div>
+          );
+        }
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
