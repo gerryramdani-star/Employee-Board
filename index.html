@@ -19,6 +19,15 @@
                 extend: {
                     fontFamily: {
                         sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+                    },
+                    animation: {
+                        marquee: 'marquee 25s linear infinite',
+                    },
+                    keyframes: {
+                        marquee: {
+                            '0%': { transform: 'translateX(100vw)' },
+                            '100%': { transform: 'translateX(-100%)' },
+                        }
                     }
                 }
             }
@@ -454,6 +463,15 @@
                     </button>
                   </div>
                 </header>
+
+                {/* RUNNING TEXT (MARQUEE) */}
+                <div className="bg-[#1a3668] text-slate-200 py-2 shadow-inner overflow-hidden flex relative z-20 border-b border-[#0A1F44]">
+                   <div className="whitespace-nowrap animate-marquee flex items-center text-sm font-semibold tracking-wide">
+                      <span className="mx-4">🔥 Semangat Pagi, Tim Lagikreatif! Kualitas adalah prioritas, konsistensi adalah kunci. Mari selesaikan target hari ini dengan hasil terbaik! Jangan Lupa Baca Al-Waqiah tiap harinya ya guys! </span>
+                      <span className="mx-4 text-[#F5A623]">|</span>
+                      <span className="mx-4 italic">💡 Revenue is not a result of activity. <span className="text-[#F5A623] font-bold not-italic">Revenue is a result of the right activity.</span></span>
+                   </div>
+                </div>
 
                 {/* MAIN CONTENT FULL WIDTH */}
                 <main className="flex-1 p-4 md:p-8 w-full mx-auto">
