@@ -105,10 +105,15 @@
           const todayStrNormalized = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
 
           const processedData = targets.map(t => {
-            const tName = (t.nama || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const tName = (t.nama || '').toLowerCase().trim();
             
+            // PENCARIAN KOLOM DAN PENCOCOKAN NAMA YANG LEBIH CERDAS
             const empLogs = (logs || []).filter(l => {
-                const lName = (l.nama || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                // Cari kolom yang mengandung kata 'nama' atau 'karyawan'
+                const keys = Object.keys(l);
+                const nameKey = keys.find(k => k.includes('nama') || k.includes('karyawan')) || 'nama';
+                
+                const lName = (l[nameKey] || '').toLowerCase().trim();
                 if (!lName || !tName) return false;
                 return tName === lName || tName.includes(lName) || lName.includes(tName);
             });
@@ -117,18 +122,34 @@
             let aktualBulanIni = 0;
             
             empLogs.forEach(log => {
-                const logDate = normalizeDate(log.tanggal || '');
+                // PENDETEKSI NAMA KOLOM DINAMIS (Anti-Error meski judul kolom Form panjang)
+                const keys = Object.keys(log);
+                const dateKey = keys.find(k => k.includes('tanggal') || k.includes('pengerjaan') || k === 'waktu') || 'tanggal';
+                const qtyStdKey = keys.find(k => k.includes('qty') && !k.includes('khusus') && !k.includes('carousel')) || 'qty_standar';
+                const qtyKhususKey = keys.find(k => k.includes('khusus') || k.includes('carousel')) || 'qty_carousel';
+
+                const logDate = normalizeDate(log[dateKey] || '');
                 const isToday = logDate === todayStrNormalized;
                 const isThisMonth = logDate.substring(3) === currentMonthStr; 
                 
-                const isDesigner = (t.divisi || '').toLowerCase().includes('designer');
+                const divLower = (t.divisi || '').toLowerCase();
+                const isDesigner = divLower.includes('designer');
+                const isVideo = divLower.includes('video');
+
                 let points = 0;
                 
-                const qtyStd = Number(log.qty_standar) || 0;
-                const qtyCar = Number(log.qty_carousel) || 0;
+                // Konversi koma menjadi titik (jika ada input dari form yg pakai koma)
+                const rawStd = log[qtyStdKey] ? String(log[qtyStdKey]).replace(',', '.') : '0';
+                const rawCar = log[qtyKhususKey] ? String(log[qtyKhususKey]).replace(',', '.') : '0';
+                
+                const qtyStd = Number(rawStd) || 0;
+                const qtyCar = Number(rawCar) || 0;
 
+                // SISTEM POIN UNIVERSAL BERDASARKAN MAN-HOURS (EFEKTIVITAS WAKTU)
                 if (isDesigner) {
-                    points = (qtyStd * 1) + (qtyCar * 3);
+                    points = (qtyStd * 1) + (qtyCar * 3.5);
+                } else if (isVideo) {
+                    points = (qtyStd * 1) + (qtyCar * 2.25);
                 } else {
                     points = qtyStd + qtyCar; 
                 }
@@ -301,7 +322,7 @@
                            </td>
                            <td className="px-5 py-4">
                               <div className="flex justify-between text-xs mb-1.5 items-end">
-                                <span className="font-medium text-slate-500">Selesai: <strong className="text-[#0A1F44] dark:text-white text-lg">{emp.aktualHariIni}</strong><span className="text-slate-400">/{emp.targetHari}</span></span>
+                                <span className="font-medium text-slate-500">Selesai: <strong className="text-[#0A1F44] dark:text-white text-lg">{Number.isInteger(emp.aktualHariIni) ? emp.aktualHariIni : emp.aktualHariIni.toFixed(2)}</strong><span className="text-slate-400">/{emp.targetHari}</span></span>
                                 <span className="font-black text-[#F5A623]">{emp.dailyProgressPct.toFixed(0)}%</span>
                               </div>
                               <div className="h-2.5 w-full bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
@@ -310,7 +331,7 @@
                            </td>
                            <td className="px-5 py-4">
                               <div className="text-xs bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 w-max">
-                                <span className="font-bold text-[#0A1F44] dark:text-white text-base">{emp.aktualBulanIni}</span>
+                                <span className="font-bold text-[#0A1F44] dark:text-white text-base">{Number.isInteger(emp.aktualBulanIni) ? emp.aktualBulanIni : emp.aktualBulanIni.toFixed(2)}</span>
                                 <span className="text-slate-500 font-medium"> / {emp.targetBulan}</span>
                               </div>
                            </td>
@@ -343,7 +364,7 @@
 
             const fetchSafely = async (url) => {
                 try {
-                    // Jalur 1: Coba koneksi langsung (Sangat cepat jika didukung browser)
+                    // Jalur 1: Coba koneksi langsung
                     const res = await fetch(url);
                     if (res.ok) {
                         const text = await res.text();
@@ -356,7 +377,7 @@
                 }
 
                 try {
-                    // Jalur 2: Fallback ke Proxy jika jalur utama diblokir CORS
+                    // Jalur 2: Fallback ke Proxy
                     const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
                     const res = await fetch(proxyUrl);
                     if (res.ok) {
@@ -373,10 +394,10 @@
 
             const baseUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vREER9VzmeYUpJP9H4UH866bCCE5rtjyCFI1_P6jwVWF9XmY359fFxeeZdRgtDkFBuKsHd_s3Fvm8x4/pub';
             
-            // HANYA MENGAMBIL TAB 11 DAN 12 UNTUK KEAMANAN DAN KECEPATAN
+            // Mengambil Tab KPI Target dan Log Harian
             const urls = [
-                `${baseUrl}?gid=379494330&output=csv`, // Tab 11: Master KPI Target
-                `${baseUrl}?gid=1573069359&output=csv`  // Tab 12: Log Harian
+                `${baseUrl}?gid=379494330&output=csv`, 
+                `${baseUrl}?gid=1573069359&output=csv`  
             ];
 
             try {
